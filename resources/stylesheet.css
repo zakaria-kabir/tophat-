@@ -10,13 +10,9 @@
 }
 
 .tophat-panel-icon-narrow {
-  margin: 0 -6px 0 0;
+  margin: 0;
   padding: 0;
-  icon-size: 1.1em;
-}
-
-.tophat-monitor {
-  padding: 0 3px !important;
+  icon-size: 0.9em;
 }
 
 .tophat-menu-button-box {
