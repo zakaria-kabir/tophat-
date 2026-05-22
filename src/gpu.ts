@@ -41,7 +41,7 @@ export const GpuMonitor = GObject.registerClass(
       this.icon.set_gicon(gicon);
       this.icon.add_style_class_name('tophat-panel-icon-narrow');
 
-      this.vbox = new St.BoxLayout({ vertical: true });
+      this.vbox = new St.BoxLayout({ vertical: true, style: 'margin-right: 3px' });
       this.vbox.connect('notify::vertical', (obj) => {
         obj.vertical = true;
       });
