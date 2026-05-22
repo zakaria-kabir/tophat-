@@ -42,6 +42,9 @@ export default class TopHatPrefs extends ExtensionPreferences {
       window.add(this.buildMemPage());
       window.add(this.buildDiskPage());
       window.add(this.buildNetPage());
+      window.add(this.buildGpuPage());
+      window.add(this.buildBatteryPage());
+      window.add(this.buildTempPage());
       window.set_default_size(750, 475);
       resolve();
     });
@@ -337,6 +340,62 @@ export default class TopHatPrefs extends ExtensionPreferences {
       _('Measurement unit'),
       choices,
       'network-usage-unit',
+      group
+    );
+
+    return page;
+  }
+
+  private buildGpuPage() {
+    const page = new Adw.PreferencesPage({
+      title: _('GPU'),
+      iconName: 'gpu-icon-symbolic',
+    });
+
+    const group = new Adw.PreferencesGroup({ title: _('GPU') });
+    page.add(group);
+
+    this.addActionRow(_('Show the GPU monitor'), 'show-gpu', group);
+    this.addActionRow(
+      _('Show usage + power draw (two rows in panel)'),
+      'gpu-multirow',
+      group
+    );
+
+    return page;
+  }
+
+  private buildBatteryPage() {
+    const page = new Adw.PreferencesPage({
+      title: _('Battery'),
+      iconName: 'battery-icon-symbolic',
+    });
+
+    const group = new Adw.PreferencesGroup({ title: _('Battery') });
+    page.add(group);
+
+    this.addActionRow(_('Show the battery monitor'), 'show-battery', group);
+    this.addActionRow(
+      _('Show charge percentage (alongside power rate)'),
+      'battery-show-percent',
+      group
+    );
+
+    return page;
+  }
+
+  private buildTempPage() {
+    const page = new Adw.PreferencesPage({
+      title: _('Temperature'),
+      iconName: 'temp-icon-symbolic',
+    });
+
+    const group = new Adw.PreferencesGroup({ title: _('Temperature') });
+    page.add(group);
+
+    this.addActionRow(
+      _('Show the temperature monitor (CPU + GPU temps)'),
+      'show-temp',
       group
     );
 

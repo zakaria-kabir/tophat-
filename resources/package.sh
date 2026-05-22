@@ -7,6 +7,6 @@ if [ -z "${VERSION}" ]; then
     exit 1
 fi
 
-echo "Packaging TopHat v$VERSION..."
+echo "Packaging TopHat+ v$VERSION..."
 
-gnome-extensions pack --force --extra-source=capacity.js --extra-source=container.js --extra-source=cpu.js --extra-source=disk.js --extra-source=file.js --extra-source=helpers.js --extra-source=history.js --extra-source=mem.js --extra-source=meter.js --extra-source=monitor.js --extra-source=net.js --extra-source=vitals.js --extra-source=icons --extra-source=../LICENSE --extra-source=../README.md --extra-source=../RELEASES.md --extra-source=stylesheet-light.css --schema=./schemas/gschemas.compiled --schema=../resources/schemas/org.gnome.shell.extensions.tophat.gschema.xml --podir=../po ./dist && echo "Extension successfully packaged" && mv tophat@fflewddur.github.io.shell-extension.zip tophat@fflewddur.github.io.v$VERSION.shell-extension.zip
+gnome-extensions pack --force --extra-source=battery.js --extra-source=capacity.js --extra-source=container.js --extra-source=cpu.js --extra-source=disk.js --extra-source=file.js --extra-source=gpu.js --extra-source=helpers.js --extra-source=history.js --extra-source=mem.js --extra-source=meter.js --extra-source=monitor.js --extra-source=net.js --extra-source=subprocess.js --extra-source=vitals.js --extra-source=icons --extra-source=../LICENSE --extra-source=../README.md --extra-source=stylesheet-light.css --schema=./schemas/gschemas.compiled --schema=../resources/schemas/org.gnome.shell.extensions.tophat-plus.gschema.xml --podir=../po ./dist && echo "Extension successfully packaged" && mv tophat-@zakaria-kabir.github.io.shell-extension.zip tophat-@zakaria-kabir.github.io.v$VERSION.shell-extension.zip

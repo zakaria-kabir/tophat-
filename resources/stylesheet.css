@@ -6,6 +6,17 @@
 .tophat-panel-icon-net {
   margin: 0;
   padding: 0;
+  icon-size: 1.1em;
+}
+
+.tophat-panel-icon-narrow {
+  margin: 0 -6px 0 0;
+  padding: 0;
+  icon-size: 1.1em;
+}
+
+.tophat-monitor {
+  padding: 0 3px !important;
 }
 
 .tophat-menu-button-box {
@@ -45,7 +56,7 @@
 .tophat-panel-usage-stacked {
   font-size: 0.7em;
   text-align: right;
-  min-width: 5em;
+  min-width: 4em;
 }
 
 .tophat-panel-inactive {

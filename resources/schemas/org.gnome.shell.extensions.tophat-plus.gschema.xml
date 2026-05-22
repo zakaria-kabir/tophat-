@@ -1,54 +1,54 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist gettext-domain="gnome-shell-extensions">
-  <enum id="org.gnome.shell.extensions.tophat.position">
+  <enum id="org.gnome.shell.extensions.tophat-plus.position">
     <value value="0" nick="leftedge"/>
     <value value="1" nick="left"/>
     <value value="2" nick="center"/>
     <value value="3" nick="right"/>
     <value value="4" nick="rightedge"/>
   </enum>
-  <enum id="org.gnome.shell.extensions.tophat.network-unit">
+  <enum id="org.gnome.shell.extensions.tophat-plus.network-unit">
     <value value="0" nick="bytes"/>
     <value value="1" nick="bits"/>
   </enum>
-  <enum id="org.gnome.shell.extensions.tophat.visualization">
+  <enum id="org.gnome.shell.extensions.tophat-plus.visualization">
     <value value="0" nick="chart"/>
     <value value="1" nick="numeric"/>
     <value value="2" nick="both"/>
   </enum>
-  <enum id="org.gnome.shell.extensions.tophat.refresh-rate">
+  <enum id="org.gnome.shell.extensions.tophat-plus.refresh-rate">
     <value value="0" nick="slow"/>
     <value value="1" nick="medium"/>
     <value value="2" nick="fast"/>
   </enum>
-  <schema id="org.gnome.shell.extensions.tophat" path="/org/gnome/shell/extensions/tophat/">
+  <schema id="org.gnome.shell.extensions.tophat-plus" path="/org/gnome/shell/extensions/tophat-plus/">
     <!-- See also: https://docs.gtk.org/glib/gvariant-format-strings.html -->
-    <key name="position-in-panel" enum="org.gnome.shell.extensions.tophat.position">
+    <key name="position-in-panel" enum="org.gnome.shell.extensions.tophat-plus.position">
       <default>'right'</default>
       <summary>Position in the panel</summary>
       <description>Where in the panel the monitors should be positioned.</description>
     </key>
-        <key name="cpu-display" enum="org.gnome.shell.extensions.tophat.visualization">
+        <key name="cpu-display" enum="org.gnome.shell.extensions.tophat-plus.visualization">
       <default>'chart'</default>
       <summary>How to visualize the CPU monitor</summary>
       <description>How to visualize the CPU monitor</description>
     </key>
-    <key name="mem-display" enum="org.gnome.shell.extensions.tophat.visualization">
+    <key name="mem-display" enum="org.gnome.shell.extensions.tophat-plus.visualization">
       <default>'chart'</default>
       <summary>How to visualize the memory monitor</summary>
       <description>How to visualize the memory monitor</description>
     </key>
-    <!-- <key name="disk-display" enum="org.gnome.shell.extensions.tophat.visualization">
+    <!-- <key name="disk-display" enum="org.gnome.shell.extensions.tophat-plus.visualization">
       <default>'chart'</default>
       <summary>How to visualize the disk monitor</summary>
       <description>How to visualize the disk monitor</description>
     </key> -->
-    <key name="fs-display" enum="org.gnome.shell.extensions.tophat.visualization">
+    <key name="fs-display" enum="org.gnome.shell.extensions.tophat-plus.visualization">
       <default>'chart'</default>
       <summary>How to visualize the filesystem monitor</summary>
       <description>How to visualize the filesystem monitor</description>
     </key>
-    <!-- <key name="net-display" enum="org.gnome.shell.extensions.tophat.visualization">
+    <!-- <key name="net-display" enum="org.gnome.shell.extensions.tophat-plus.visualization">
       <default>'numeric'</default>
       <summary>How to visualize the network monitor</summary>
       <description>How to visualize the network monitor</description>
@@ -99,7 +99,7 @@
       <description>Use animations when the heights of meter bars change.</description>
     </key> -->
     <key name="use-system-accent" type="b">
-      <default>true</default>
+      <default>false</default>
       <summary>Use the system accent color</summary>
       <description>Use the system accent color (GNOME 47+).</description>
     </key>
@@ -113,7 +113,7 @@
       <summary>Width of the meter bars</summary>
       <description>Width of the meter bars in 'em's. When a meter needs to show more than two bars, this value will be multiplied by .75; when a meter needs to show more than eight bars, this value will be multiplied by .5.</description>
     </key> -->
-    <key name="refresh-rate" enum="org.gnome.shell.extensions.tophat.refresh-rate">
+    <key name="refresh-rate" enum="org.gnome.shell.extensions.tophat-plus.refresh-rate">
       <default>'medium'</default>
       <summary>How frequently TopHat will check system resource usage</summary>
       <description>This controls how frequently Tophat will check system resource usage. 'fast' will update more often but may negatively impact system performance. 'slow' will update less often and may improve system performance.</description>
@@ -143,12 +143,12 @@
       <summary>Network device to monitor</summary>
       <description>Network device to monitor.</description>
     </key>
-    <key name="network-usage-unit" enum="org.gnome.shell.extensions.tophat.network-unit">
+    <key name="network-usage-unit" enum="org.gnome.shell.extensions.tophat-plus.network-unit">
       <default>'bytes'</default>
       <summary>Unit for showing network usage</summary>
       <description>Show network usage in bytes or bits.</description>
     </key>
-    <!-- <key name="disk-monitor-mode" enum="org.gnome.shell.extensions.tophat.disk-monitor-mode">
+    <!-- <key name="disk-monitor-mode" enum="org.gnome.shell.extensions.tophat-plus.disk-monitor-mode">
       <default>'storage'</default>
       <summary>Monitor available storage, disk activity, or both</summary>
       <description>Sets the behavior of the disk monitor in the top panel to summarize available storage, disk activity, or both.</description>
@@ -162,6 +162,36 @@
       <default>''</default>
       <summary>List of mount points to hide in the disk activity menu</summary>
       <description>List of mount points to hide in the disk activity menu.</description>
+    </key>
+    <key name="show-gpu" type="b">
+      <default>true</default>
+      <summary>Show the GPU monitor</summary>
+      <description>Show the GPU monitor.</description>
+    </key>
+    <key name="gpu-multirow" type="b">
+      <default>false</default>
+      <summary>Show GPU usage and power draw in two rows</summary>
+      <description>When enabled, the GPU panel element shows usage percentage on the first row and power draw (W) on the second row.</description>
+    </key>
+    <key name="show-battery" type="b">
+      <default>true</default>
+      <summary>Show the battery monitor</summary>
+      <description>Show the battery monitor.</description>
+    </key>
+    <key name="battery-show-percent" type="b">
+      <default>true</default>
+      <summary>Show battery percentage alongside power rate</summary>
+      <description>When enabled, the battery panel shows both charge percentage and power rate. When disabled, only power rate is shown.</description>
+    </key>
+    <key name="show-temp" type="b">
+      <default>true</default>
+      <summary>Show the temperature monitor</summary>
+      <description>Show a dedicated panel element displaying CPU and GPU temperatures.</description>
+    </key>
+    <key name="show-cpu-fan" type="b">
+      <default>true</default>
+      <summary>Show CPU fan speed in CPU menu</summary>
+      <description>Display the CPU fan speed (RPM) in the CPU monitor pop-up menu.</description>
     </key>
   </schema>
 </schemalist>

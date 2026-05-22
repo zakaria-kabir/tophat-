@@ -1,10 +1,10 @@
 {
-  "uuid": "tophat@fflewddur.github.io",
-  "name": "TopHat",
-  "description": "View CPU, memory, disk, and network activity in the GNOME top bar.",
-  "version": 24,
+  "uuid": "tophat-@zakaria-kabir.github.io",
+  "name": "TopHat+",
+  "description": "TopHat with GPU, battery, and fan monitoring. Extends TopHat by fflewddur with Vitals-inspired sensors.",
+  "version": 1,
   "shell-version": ["45", "46", "47", "48", "49", "50"],
-  "url": "https://github.com/fflewddur/tophat",
-  "gettext-domain": "tophat@fflewddur.github.io",
-  "settings-schema": "org.gnome.shell.extensions.tophat"
+  "url": "https://github.com/zakaria-kabir/tophat-",
+  "gettext-domain": "tophat-@zakaria-kabir.github.io",
+  "settings-schema": "org.gnome.shell.extensions.tophat-plus"
 }

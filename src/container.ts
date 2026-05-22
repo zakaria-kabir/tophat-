@@ -34,7 +34,7 @@ export const TopHatContainer = GObject.registerClass(
     ) {
       super(menuAlignment, nameText, dontCreateMenu);
       this.monitors = new Array<TopHatMonitor>(0);
-      this.box = new St.BoxLayout();
+      this.box = new St.BoxLayout({ style: 'spacing: 0' });
       this.add_child(this.box);
       this.remove_style_class_name('panel-button');
     }

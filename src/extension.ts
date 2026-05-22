@@ -28,6 +28,9 @@ import { CpuMonitor } from './cpu.js';
 import { MemMonitor } from './mem.js';
 import { DiskMonitor } from './disk.js';
 import { NetMonitor } from './net.js';
+import { GpuMonitor } from './gpu.js';
+import { BatteryMonitor } from './battery.js';
+import { TempMonitor } from './temp.js';
 import { TopHatMonitor } from './monitor.js';
 
 enum MenuPosition {
@@ -177,6 +180,9 @@ export default class TopHat extends Extension {
     this.container.addMonitor(new MemMonitor(this.metadata, this.gsettings));
     this.container.addMonitor(new DiskMonitor(this.metadata, this.gsettings));
     this.container.addMonitor(new NetMonitor(this.metadata, this.gsettings));
+    this.container.addMonitor(new TempMonitor(this.metadata, this.gsettings));
+    this.container.addMonitor(new GpuMonitor(this.metadata, this.gsettings));
+    this.container.addMonitor(new BatteryMonitor(this.metadata, this.gsettings));
     const pref = this.getPreferredPanelAttributes();
     this.container = Main.panel.addToStatusArea(
       'TopHat',
@@ -195,6 +201,7 @@ export default class TopHat extends Extension {
     // Trigger notifications for properties that were set during init and will not change
     this.vitals?.notify('cpu-model');
     this.vitals?.notify('summary-interval');
+    this.vitals?.notify('gpu-name');
   }
 
   private getPreferredPanelAttributes() {

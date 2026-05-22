@@ -133,7 +133,7 @@ export const TopHatMonitor = GObject.registerClass(
       // We need to add the box as a child to `this` before
       // assigning it to this.box
       this.container.remove_all_children();
-      const box = new St.BoxLayout();
+      const box = new St.BoxLayout({ style: 'spacing: 0' });
       this.add_child(box);
       this.box = box;
       this.menuLayout = this.buildMenuBase();

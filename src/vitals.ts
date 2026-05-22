@@ -8,6 +8,7 @@ import { gettext as _ } from 'resource:///org/gnome/shell/extensions/extension.j
 import { File } from './file.js';
 import { NumTopProcs } from './monitor.js';
 import { FSUsage, ONE_GB_IN_B, readFileSystems } from './helpers.js';
+import { SubProcess } from './subprocess.js';
 
 Gio._promisify(Gio.File.prototype, 'enumerate_children_async');
 Gio._promisify(Gio.FileEnumerator.prototype, 'next_files_async');
@@ -30,6 +31,13 @@ const RE_NVME_DEV = /^nvme\d+n\d+$/;
 const RE_BLOCK_DEV = /^[^\d]+$/;
 const RE_CMD = /\/*[^\s]*\/([^\s]*)/;
 const RE_LAUNCHER = /[^\s]*(python\d*|gjs)\b[^/]*(\/.*)$/;
+
+// Battery constants
+const BATTERY_PATHS = ['BAT0', 'BAT1', 'BAT'];
+// GPU: fields queried from nvidia-smi
+const NVIDIA_SMI_QUERY =
+  'name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,fan.speed';
+const NVIDIA_SMI_UPDATE_SEC = 5;
 
 export interface IActivity {
   val(): number;
@@ -75,6 +83,33 @@ export const Vitals = GObject.registerClass(
         'cpu-freq',
         'CPU frequency',
         'Average CPU frequency across all cores, in GHz',
+        GObject.ParamFlags.READWRITE,
+        0,
+        0,
+        0
+      ),
+      'cpu-freq-min': GObject.ParamSpec.int(
+        'cpu-freq-min',
+        'CPU frequency session minimum',
+        'Session minimum CPU frequency in GHz (×10, integer)',
+        GObject.ParamFlags.READWRITE,
+        0,
+        0,
+        0
+      ),
+      'cpu-freq-max': GObject.ParamSpec.int(
+        'cpu-freq-max',
+        'CPU frequency session maximum',
+        'Session maximum CPU frequency in GHz (×10, integer)',
+        GObject.ParamFlags.READWRITE,
+        0,
+        0,
+        0
+      ),
+      'cpu-fan': GObject.ParamSpec.int(
+        'cpu-fan',
+        'CPU fan speed',
+        'CPU fan speed in RPM (0 = unavailable)',
         GObject.ParamFlags.READWRITE,
         0,
         0,
@@ -280,6 +315,108 @@ export const Vitals = GObject.registerClass(
         GObject.ParamFlags.READWRITE,
         ''
       ),
+      'gpu-usage': GObject.ParamSpec.int(
+        'gpu-usage',
+        'GPU usage',
+        'Proportion of GPU usage as a value between 0 - 100',
+        GObject.ParamFlags.READWRITE,
+        0,
+        100,
+        0
+      ),
+      'gpu-mem-used': GObject.ParamSpec.int(
+        'gpu-mem-used',
+        'GPU memory used',
+        'GPU memory used in MB',
+        GObject.ParamFlags.READWRITE,
+        0,
+        0,
+        0
+      ),
+      'gpu-mem-total': GObject.ParamSpec.int(
+        'gpu-mem-total',
+        'GPU memory total',
+        'Total GPU memory in MB',
+        GObject.ParamFlags.READWRITE,
+        0,
+        0,
+        0
+      ),
+      'gpu-temp': GObject.ParamSpec.int(
+        'gpu-temp',
+        'GPU temperature',
+        'GPU temperature in degrees Celsius',
+        GObject.ParamFlags.READWRITE,
+        0,
+        0,
+        0
+      ),
+      'gpu-power': GObject.ParamSpec.int(
+        'gpu-power',
+        'GPU power draw',
+        'GPU power draw in Watts',
+        GObject.ParamFlags.READWRITE,
+        0,
+        0,
+        0
+      ),
+      'gpu-fan': GObject.ParamSpec.int(
+        'gpu-fan',
+        'GPU fan speed',
+        'GPU fan speed: 0-100 = percent (nvidia-smi), >100 = RPM (hwmon fallback), -1 = unavailable',
+        GObject.ParamFlags.READWRITE,
+        -1,
+        9999,
+        -1
+      ),
+      'gpu-name': GObject.ParamSpec.string(
+        'gpu-name',
+        'GPU model name',
+        'GPU model name',
+        GObject.ParamFlags.READWRITE,
+        ''
+      ),
+      'gpu-history': GObject.ParamSpec.string(
+        'gpu-history',
+        'GPU usage history',
+        'GPU usage history',
+        GObject.ParamFlags.READWRITE,
+        ''
+      ),
+      'battery-percent': GObject.ParamSpec.int(
+        'battery-percent',
+        'Battery charge',
+        'Battery charge percentage (0-100)',
+        GObject.ParamFlags.READWRITE,
+        0,
+        100,
+        0
+      ),
+      'battery-state': GObject.ParamSpec.string(
+        'battery-state',
+        'Battery state',
+        'Battery state (Charging, Discharging, Full, etc.)',
+        GObject.ParamFlags.READWRITE,
+        ''
+      ),
+      'battery-power-rate': GObject.ParamSpec.int(
+        'battery-power-rate',
+        'Battery power rate',
+        'Battery power draw or charge rate in milliwatts (negative = discharging)',
+        GObject.ParamFlags.READWRITE,
+        0,
+        0,
+        0
+      ),
+      'battery-time-left': GObject.ParamSpec.int(
+        'battery-time-left',
+        'Battery time remaining',
+        'Estimated time remaining in minutes',
+        GObject.ParamFlags.READWRITE,
+        0,
+        0,
+        0
+      ),
       'summary-interval': GObject.ParamSpec.float(
         'summary-interval',
         'Refresh interval for the summary loop',
@@ -314,6 +451,8 @@ export const Vitals = GObject.registerClass(
     private showNet;
     private showDisk;
     private showFS;
+    private showGpu;
+    private showBattery;
     private netDev;
     private netDevs;
     private fsMount;
@@ -322,6 +461,22 @@ export const Vitals = GObject.registerClass(
     private nm: NM.Client | null;
     private detailsInterval = DetailsIntervalBackground;
     private detailsNeededCtr = 0;
+    // GPU state
+    private gpuSubprocess: SubProcess | null = null;
+    private gpuUsageHistory = new Array<GpuUsage>(MaxHistoryLen);
+    private gpuType: 'nvidia' | 'amd' | 'none' = 'none';
+    private gpuDrmPowerPath: string | null = null;
+    private gpuDrmUsagePath: string | null = null;
+    private gpuDrmTempPath: string | null = null;
+    // Battery state
+    private batteryPath: string | null = null;
+    private batteryPowerSamples = new Array<number>(10).fill(0);
+    private batteryPowerSampleIdx = 0;
+    // Fan state (hwmon paths discovered at startup)
+    private fanPaths: string[] = [];
+    // CPU frequency session extremes (in tenths of GHz, same units as cpu_freq)
+    private cpuFreqSessionMin = 0;
+    private cpuFreqSessionMax = 0;
 
     constructor(model: CpuModel, gsettings: Gio.Settings) {
       super();
@@ -401,6 +556,34 @@ export const Vitals = GObject.registerClass(
         }
       });
       this.settingSignals.push(id);
+
+      this.showGpu = gsettings.get_boolean('show-gpu');
+      id = this.gsettings.connect('changed::show-gpu', (settings) => {
+        this.showGpu = settings.get_boolean('show-gpu');
+        if (!this.showGpu) {
+          // Tear down the nvidia-smi subprocess when GPU monitor is hidden
+          this.gpuSubprocess?.terminate();
+          this.gpuSubprocess = null;
+        } else if (this.gpuType === 'nvidia' && !this.gpuSubprocess) {
+          this.gpuSubprocess = this.startNvidiaSmi();
+        }
+      });
+      this.settingSignals.push(id);
+
+      this.showBattery = gsettings.get_boolean('show-battery');
+      id = this.gsettings.connect('changed::show-battery', (settings) => {
+        this.showBattery = settings.get_boolean('show-battery');
+      });
+      this.settingSignals.push(id);
+
+      // Discover GPU, battery, and fans once at startup
+      this.discoverGpu();
+      this.discoverBattery();
+      this.discoverFans();
+      // Initialize GPU history array
+      for (let i = 0; i < this.gpuUsageHistory.length; i++) {
+        this.gpuUsageHistory[i] = new GpuUsage();
+      }
 
       this.fsToHide = gsettings
         .get_string('fs-hide-in-menu')
@@ -504,6 +687,8 @@ export const Vitals = GObject.registerClass(
         GLib.source_remove(this.fsLoop);
         this.fsLoop = 0;
       }
+      this.gpuSubprocess?.terminate();
+      this.gpuSubprocess = null;
     }
 
     // readSummaries queries all of the info needed by the topbar widgets
@@ -520,6 +705,13 @@ export const Vitals = GObject.registerClass(
       if (this.showDisk || this.showFS) {
         this.loadDiskstats();
       }
+      if (this.showGpu) {
+        this.loadGpu();
+      }
+      if (this.showBattery) {
+        this.loadBattery();
+      }
+      this.loadFans();
       return true;
     }
 
@@ -832,7 +1024,17 @@ export const Vitals = GObject.registerClass(
                 freq += parseInt(m[1]);
               }
             }
-            this.cpu_freq = Math.round(freq / this.cpuModel.cores / 100) / 10;
+            const cur = Math.round(freq / this.cpuModel.cores / 100) / 10;
+            this.cpu_freq = cur;
+            // Track session extremes
+            if (this.cpuFreqSessionMin === 0 || cur < this.cpuFreqSessionMin) {
+              this.cpuFreqSessionMin = cur;
+              this.cpu_freq_min = cur;
+            }
+            if (cur > this.cpuFreqSessionMax) {
+              this.cpuFreqSessionMax = cur;
+              this.cpu_freq_max = cur;
+            }
             resolve();
           })
           .catch((e) => {
@@ -1055,6 +1257,363 @@ export const Vitals = GObject.registerClass(
             resolve();
           });
       });
+    }
+
+    // ── GPU ──────────────────────────────────────────────────────────────────
+
+    private discoverGpu(): void {
+      // Check for NVIDIA GPU first (nvidia-smi must be in PATH)
+      try {
+        const probe = Gio.Subprocess.new(
+          ['nvidia-smi', '--query-gpu=name', '--format=csv,noheader,nounits'],
+          Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_SILENCE
+        );
+        probe.wait_async(null, (proc, res) => {
+          try {
+            proc?.wait_finish(res);
+            if (proc?.get_exit_status() === 0) {
+              this.gpuType = 'nvidia';
+              if (this.showGpu) {
+                this.gpuSubprocess = this.startNvidiaSmi();
+              }
+            } else {
+              this.discoverAmdGpu();
+            }
+          } catch (_e) {
+            this.discoverAmdGpu();
+          }
+        });
+      } catch (_e) {
+        this.discoverAmdGpu();
+      }
+    }
+
+    private discoverAmdGpu(): void {
+      // Look for AMD GPU via DRM sysfs
+      const base = '/sys/class/drm/';
+      const hwmonBase = '/sys/class/hwmon/';
+      // Check common card names
+      const cards = ['card0', 'card1'];
+      for (const card of cards) {
+        const powerPath = `${base}${card}/device/hwmon/hwmon0/power1_average`;
+        const usagePath = `${base}${card}/device/gpu_busy_percent`;
+        const tempPath = `${base}${card}/device/hwmon/hwmon0/temp1_input`;
+        if (new File(usagePath).exists()) {
+          this.gpuType = 'amd';
+          this.gpuDrmUsagePath = usagePath;
+          if (new File(powerPath).exists()) {
+            this.gpuDrmPowerPath = powerPath;
+          }
+          if (new File(tempPath).exists()) {
+            this.gpuDrmTempPath = tempPath;
+          }
+          break;
+        }
+      }
+      // Also check hwmon for amdgpu driver
+      if (this.gpuType === 'none') {
+        try {
+          const hwmon = new File(hwmonBase);
+          hwmon.listSync().forEach((filename) => {
+            const name = new File(`${hwmonBase}${filename}/name`).readSync();
+            if (name === 'amdgpu') {
+              this.gpuType = 'amd';
+              const usagePath = `/sys/class/hwmon/${filename}/device/gpu_busy_percent`;
+              const powerPath = `/sys/class/hwmon/${filename}/power1_average`;
+              const tempPath = `/sys/class/hwmon/${filename}/temp1_input`;
+              if (new File(usagePath).exists()) this.gpuDrmUsagePath = usagePath;
+              if (new File(powerPath).exists()) this.gpuDrmPowerPath = powerPath;
+              if (new File(tempPath).exists()) this.gpuDrmTempPath = tempPath;
+            }
+          });
+        } catch (_e) {
+          // No AMD GPU found; silently continue
+        }
+      }
+    }
+
+    private startNvidiaSmi(): SubProcess {
+      const cmd = [
+        'nvidia-smi',
+        `--query-gpu=${NVIDIA_SMI_QUERY}`,
+        '--format=csv,noheader,nounits',
+        '-l',
+        String(NVIDIA_SMI_UPDATE_SEC),
+      ];
+      return new SubProcess(cmd);
+    }
+
+    private loadGpu(): void {
+      if (this.gpuType === 'nvidia') {
+        this.loadGpuNvidia();
+      } else if (this.gpuType === 'amd') {
+        this.loadGpuAmd();
+      }
+    }
+
+    private loadGpuNvidia(): void {
+      if (!this.gpuSubprocess) {
+        return;
+      }
+      this.gpuSubprocess
+        .read()
+        .then((line) => {
+          if (typeof line !== 'string' || line === '') return;
+          // Fields: name, utilization.gpu, memory.used, memory.total,
+          //         temperature.gpu, power.draw, fan.speed
+          const parts = line.split(',').map((s) => s.trim());
+          if (parts.length < 7) return;
+          const name = parts[0];
+          const utilization = parseInt(parts[1]) || 0;
+          const memUsed = parseInt(parts[2]) || 0;
+          const memTotal = parseInt(parts[3]) || 0;
+          const temp = parseInt(parts[4]) || 0;
+          const powerRaw = parseFloat(parts[5]);
+          const power = Number.isNaN(powerRaw) ? 0 : Math.round(powerRaw);
+          // fan.speed returns "[N/A]" or "N/A" or "ERR!" on many laptop GPUs
+          const fanStr = parts[6].replace(/[\[\]]/g, '').trim();
+          const fanRaw = parseInt(fanStr);
+          const fan = (fanStr === 'N/A' || fanStr === 'ERR!' || Number.isNaN(fanRaw)) ? -1 : fanRaw;
+
+          this.gpu_name = name;
+          this.gpu_usage = utilization;
+          this.gpu_mem_used = memUsed;
+          this.gpu_mem_total = memTotal;
+          this.gpu_temp = temp;
+          this.gpu_power = power;
+
+          // If nvidia-smi can't report fan speed (EC-managed), fall back to
+          // hwmon fan readings (same fans cool both CPU and GPU on this laptop)
+          if (fan >= 0) {
+            this.gpu_fan = fan;
+          } else if (this.fanPaths.length > 0) {
+            // Read fan1 (or fan2 if available) as RPM fallback; stored as >100
+            const fanPath = this.fanPaths.length > 1 ? this.fanPaths[1] : this.fanPaths[0];
+            new File(fanPath)
+              .read()
+              .then((v) => {
+                const rpm = parseInt(v) || 0;
+                // Store as RPM (>100 signals RPM in the display layer)
+                this.gpu_fan = rpm > 0 ? rpm : -1;
+              })
+              .catch(() => { this.gpu_fan = -1; });
+          } else {
+            this.gpu_fan = -1;
+          }
+
+          const usage = new GpuUsage();
+          usage.utilization = utilization / 100;
+          if (this.gpuUsageHistory.unshift(usage) > MaxHistoryLen) {
+            this.gpuUsageHistory.pop();
+          }
+          this.gpu_history = this.hashGpuHistory();
+        })
+        .catch((e) => {
+          console.warn(`[TopHat] error in loadGpuNvidia(): ${e}`);
+          // Subprocess may have died (e.g. MUX switch to iGPU-only)
+          this.gpuSubprocess?.terminate();
+          this.gpuSubprocess = null;
+          this.gpuType = 'none';
+          this.gpu_name = '';
+        });
+    }
+
+    private loadGpuAmd(): void {
+      const reads: Promise<void>[] = [];
+      if (this.gpuDrmUsagePath) {
+        reads.push(
+          new File(this.gpuDrmUsagePath)
+            .read()
+            .then((v) => {
+              const utilization = parseInt(v) || 0;
+              this.gpu_usage = utilization;
+              const usage = new GpuUsage();
+              usage.utilization = utilization / 100;
+              if (this.gpuUsageHistory.unshift(usage) > MaxHistoryLen) {
+                this.gpuUsageHistory.pop();
+              }
+              this.gpu_history = this.hashGpuHistory();
+            })
+            .catch((_e) => {})
+        );
+      }
+      if (this.gpuDrmPowerPath) {
+        reads.push(
+          new File(this.gpuDrmPowerPath)
+            .read()
+            .then((v) => {
+              // DRM power is in microwatts
+              this.gpu_power = Math.round(parseInt(v) / 1000000);
+            })
+            .catch((_e) => {})
+        );
+      }
+      if (this.gpuDrmTempPath) {
+        reads.push(
+          new File(this.gpuDrmTempPath)
+            .read()
+            .then((v) => {
+              this.gpu_temp = Math.round(parseInt(v) / 1000);
+            })
+            .catch((_e) => {})
+        );
+      }
+    }
+
+    // ── Battery ───────────────────────────────────────────────────────────────
+
+    private discoverBattery(): void {
+      const base = '/sys/class/power_supply/';
+      for (const name of BATTERY_PATHS) {
+        const uevent = `${base}${name}/uevent`;
+        if (new File(uevent).exists()) {
+          this.batteryPath = uevent;
+          break;
+        }
+      }
+      // Fall back: scan for any BAT* entry
+      if (!this.batteryPath) {
+        try {
+          const dir = new File(base);
+          dir.listSync().forEach((entry) => {
+            if (!this.batteryPath && entry.startsWith('BAT')) {
+              const uevent = `${base}${entry}/uevent`;
+              if (new File(uevent).exists()) {
+                this.batteryPath = uevent;
+              }
+            }
+          });
+        } catch (_e) {}
+      }
+    }
+
+    private loadBattery(): void {
+      if (!this.batteryPath) return;
+      new File(this.batteryPath)
+        .read()
+        .then((contents) => {
+          const lines = contents.split('\n');
+          const kv = new Map<string, string>();
+          for (const line of lines) {
+            const eq = line.indexOf('=');
+            if (eq > 0) {
+              const key = line.substring(0, eq).trim();
+              const val = line.substring(eq + 1).trim();
+              kv.set(key, val);
+            }
+          }
+          const status = kv.get('POWER_SUPPLY_STATUS') ?? 'Unknown';
+          const capacity = parseInt(kv.get('POWER_SUPPLY_CAPACITY') ?? '0') || 0;
+          const voltageNow = parseInt(kv.get('POWER_SUPPLY_VOLTAGE_NOW') ?? '0') || 0;
+          const currentNow = parseInt(kv.get('POWER_SUPPLY_CURRENT_NOW') ?? '0') || 0;
+          const powerNow = parseInt(kv.get('POWER_SUPPLY_POWER_NOW') ?? '0') || 0;
+          const energyFull = parseInt(kv.get('POWER_SUPPLY_ENERGY_FULL') ?? '0') || 0;
+          const energyNow = parseInt(kv.get('POWER_SUPPLY_ENERGY_NOW') ?? '0') || 0;
+
+          // Power rate in mW (positive = charging, negative = discharging)
+          let powerRateMw = 0;
+          if (powerNow !== 0) {
+            powerRateMw = powerNow / 1000; // µW → mW
+          } else if (voltageNow !== 0 && currentNow !== 0) {
+            // voltage in µV, current in µA → power in µW → mW
+            powerRateMw = Math.round((voltageNow * currentNow) / 1e9);
+          }
+          if (status === 'Discharging') {
+            powerRateMw = -Math.abs(powerRateMw);
+          } else {
+            powerRateMw = Math.abs(powerRateMw);
+          }
+
+          // Rolling average for time-left estimate
+          this.batteryPowerSamples[this.batteryPowerSampleIdx] = Math.abs(powerRateMw);
+          this.batteryPowerSampleIdx =
+            (this.batteryPowerSampleIdx + 1) % this.batteryPowerSamples.length;
+          const avgPowerMw =
+            this.batteryPowerSamples.reduce((a, b) => a + b, 0) /
+            this.batteryPowerSamples.length;
+
+          let timeLeftMin = 0;
+          if (avgPowerMw > 0 && energyFull > 0) {
+            const energyRemain =
+              status === 'Discharging' ? energyNow : energyFull - energyNow; // µWh
+            timeLeftMin = Math.round(
+              (energyRemain / 1000 / avgPowerMw) * 60
+            );
+          }
+
+          this.battery_percent = capacity;
+          this.battery_state = status;
+          this.battery_power_rate = Math.round(powerRateMw);
+          this.battery_time_left = timeLeftMin;
+        })
+        .catch((e) => {
+          console.warn(`[TopHat] error in loadBattery(): ${e}`);
+        });
+    }
+
+    // ── Fans ──────────────────────────────────────────────────────────────────
+
+    // Discover fan RPM sysfs paths via hwmon. Prefer the 'hp' driver (laptop
+    // embedded controller fans); fall back to 'acpi_fan' if nothing else found.
+    private discoverFans(): void {
+      const hwmonBase = '/sys/class/hwmon/';
+      const hpFans: string[] = [];
+      const acpiFans: string[] = [];
+      try {
+        const dir = new File(hwmonBase);
+        const entries = dir.listSync();
+        for (const entry of entries) {
+          const namePath = `${hwmonBase}${entry}/name`;
+          if (!new File(namePath).exists()) continue;
+          const driverName = new File(namePath).readSync().trim();
+          // List fan*_input files under this hwmon directory
+          let idx = 1;
+          while (true) {
+            const fanPath = `${hwmonBase}${entry}/fan${idx}_input`;
+            if (!new File(fanPath).exists()) break;
+            if (driverName === 'hp') {
+              hpFans.push(fanPath);
+            } else if (driverName === 'acpi_fan') {
+              acpiFans.push(fanPath);
+            }
+            idx++;
+          }
+        }
+      } catch (_e) {
+        // No hwmon available
+      }
+      // Prefer HP EC fans; fall back to ACPI fans
+      this.fanPaths = hpFans.length > 0 ? hpFans : acpiFans;
+    }
+
+    private loadFans(): void {
+      if (this.fanPaths.length === 0) return;
+      // Read the first fan path (CPU fan on HP OMEN)
+      new File(this.fanPaths[0])
+        .read()
+        .then((v) => {
+          const rpm = parseInt(v) || 0;
+          this.cpu_fan = rpm;
+        })
+        .catch((_e) => {});
+    }
+
+    // ── GPU history helpers ───────────────────────────────────────────────────
+
+    private hashGpuHistory(): string {
+      let toHash = '';
+      for (const u of this.gpuUsageHistory) {
+        if (u) {
+          toHash += (u.utilization * 100).toFixed(0);
+        }
+      }
+      const cs = GLib.Checksum.new(GLib.ChecksumType.MD5);
+      cs.update(toHash);
+      return cs.get_string() ?? '';
+    }
+
+    public getGpuHistory() {
+      return this.gpuUsageHistory;
     }
 
     private loadFS(): void {
@@ -1285,6 +1844,36 @@ export const Vitals = GObject.registerClass(
       }
       this.props.cpu_freq = v;
       this.notify('cpu-freq');
+    }
+
+    public get cpu_freq_min(): number {
+      return this.props.cpu_freq_min;
+    }
+
+    private set cpu_freq_min(v: number) {
+      if (this.cpu_freq_min === v) return;
+      this.props.cpu_freq_min = v;
+      this.notify('cpu-freq-min');
+    }
+
+    public get cpu_freq_max(): number {
+      return this.props.cpu_freq_max;
+    }
+
+    private set cpu_freq_max(v: number) {
+      if (this.cpu_freq_max === v) return;
+      this.props.cpu_freq_max = v;
+      this.notify('cpu-freq-max');
+    }
+
+    public get cpu_fan(): number {
+      return this.props.cpu_fan;
+    }
+
+    private set cpu_fan(v: number) {
+      if (this.cpu_fan === v) return;
+      this.props.cpu_fan = v;
+      this.notify('cpu-fan');
     }
 
     public get cpu_temp(): number {
@@ -1598,6 +2187,126 @@ export const Vitals = GObject.registerClass(
       this.notify('summary-interval');
     }
 
+    public get gpu_usage(): number {
+      return this.props.gpu_usage;
+    }
+
+    private set gpu_usage(v: number) {
+      if (this.gpu_usage === v) return;
+      this.props.gpu_usage = v;
+      this.notify('gpu-usage');
+    }
+
+    public get gpu_mem_used(): number {
+      return this.props.gpu_mem_used;
+    }
+
+    private set gpu_mem_used(v: number) {
+      if (this.gpu_mem_used === v) return;
+      this.props.gpu_mem_used = v;
+      this.notify('gpu-mem-used');
+    }
+
+    public get gpu_mem_total(): number {
+      return this.props.gpu_mem_total;
+    }
+
+    private set gpu_mem_total(v: number) {
+      if (this.gpu_mem_total === v) return;
+      this.props.gpu_mem_total = v;
+      this.notify('gpu-mem-total');
+    }
+
+    public get gpu_temp(): number {
+      return this.props.gpu_temp;
+    }
+
+    private set gpu_temp(v: number) {
+      if (this.gpu_temp === v) return;
+      this.props.gpu_temp = v;
+      this.notify('gpu-temp');
+    }
+
+    public get gpu_power(): number {
+      return this.props.gpu_power;
+    }
+
+    private set gpu_power(v: number) {
+      if (this.gpu_power === v) return;
+      this.props.gpu_power = v;
+      this.notify('gpu-power');
+    }
+
+    public get gpu_fan(): number {
+      return this.props.gpu_fan;
+    }
+
+    private set gpu_fan(v: number) {
+      if (this.gpu_fan === v) return;
+      this.props.gpu_fan = v;
+      this.notify('gpu-fan');
+    }
+
+    public get gpu_name(): string {
+      return this.props.gpu_name;
+    }
+
+    private set gpu_name(v: string) {
+      if (this.gpu_name === v) return;
+      this.props.gpu_name = v;
+      this.notify('gpu-name');
+    }
+
+    public get gpu_history(): string {
+      return this.props.gpu_history;
+    }
+
+    private set gpu_history(v: string) {
+      if (this.gpu_history === v) return;
+      this.props.gpu_history = v;
+      this.notify('gpu-history');
+    }
+
+    public get battery_percent(): number {
+      return this.props.battery_percent;
+    }
+
+    private set battery_percent(v: number) {
+      if (this.battery_percent === v) return;
+      this.props.battery_percent = v;
+      this.notify('battery-percent');
+    }
+
+    public get battery_state(): string {
+      return this.props.battery_state;
+    }
+
+    private set battery_state(v: string) {
+      if (this.battery_state === v) return;
+      this.props.battery_state = v;
+      this.notify('battery-state');
+    }
+
+    public get battery_power_rate(): number {
+      return this.props.battery_power_rate;
+    }
+
+    private set battery_power_rate(v: number) {
+      if (this.battery_power_rate === v) return;
+      this.props.battery_power_rate = v;
+      this.notify('battery-power-rate');
+    }
+
+    public get battery_time_left(): number {
+      return this.props.battery_time_left;
+    }
+
+    private set battery_time_left(v: number) {
+      if (this.battery_time_left === v) return;
+      this.props.battery_time_left = v;
+      this.notify('battery-time-left');
+    }
+
     public override vfunc_dispose(): void {
       for (const s of this.settingSignals) {
         this.gsettings.disconnect(s);
@@ -1611,6 +2320,9 @@ class Properties {
   uptime = 0;
   cpu_usage = 0;
   cpu_freq = 0;
+  cpu_freq_min = 0;
+  cpu_freq_max = 0;
+  cpu_fan = 0;
   cpu_temp = 0;
   cpu_history = '';
   cpu_top_procs = '';
@@ -1636,6 +2348,18 @@ class Properties {
   fs_usage = 0;
   fs_list = '';
   summary_interval = 0;
+  gpu_usage = 0;
+  gpu_mem_used = 0;
+  gpu_mem_total = 0;
+  gpu_temp = 0;
+  gpu_power = 0;
+  gpu_fan = -1;
+  gpu_name = '';
+  gpu_history = '';
+  battery_percent = 0;
+  battery_state = '';
+  battery_power_rate = 0;
+  battery_time_left = 0;
 }
 
 export type Vitals = InstanceType<typeof Vitals>;
@@ -1753,6 +2477,24 @@ class CpuUsage implements IHistory {
       s += ` core[${index}]: ${this.core[index].toFixed(2)}`;
     });
     return s;
+  }
+}
+
+export class GpuUsage implements IHistory {
+  public utilization: number;
+
+  constructor() {
+    this.utilization = 0;
+  }
+
+  public val() {
+    return this.utilization;
+  }
+
+  public copy() {
+    const c = new GpuUsage();
+    c.utilization = this.utilization;
+    return c;
   }
 }
 

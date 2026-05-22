@@ -40,7 +40,10 @@ export const CpuMonitor = GObject.registerClass(
     private menuCpuCap;
     private menuCpuModel;
     private menuCpuFreq;
+    private menuCpuFreqMin;
+    private menuCpuFreqMax;
     private menuCpuTemp;
+    private menuCpuFan;
     private menuUptime;
     private topProcs: TopProc[];
     private showCores;
@@ -71,7 +74,10 @@ export const CpuMonitor = GObject.registerClass(
       this.menuCpuCap = new CapacityBar();
       this.menuCpuModel = new St.Label();
       this.menuCpuFreq = new St.Label();
+      this.menuCpuFreqMin = new St.Label();
+      this.menuCpuFreqMax = new St.Label();
       this.menuCpuTemp = new St.Label();
+      this.menuCpuFan = new St.Label();
       this.menuUptime = new St.Label();
       this.historyChart = new HistoryChart();
       this.topProcs = new Array<TopProc>(NumTopProcs);
@@ -176,16 +182,46 @@ export const CpuMonitor = GObject.registerClass(
       );
       this.addMenuRow(this.menuCpuFreq, 1, 1, 1);
       label = new St.Label({
+        text: _('Session min:'),
+        style_class: 'tophat-menu-label tophat-menu-details',
+      });
+      this.addMenuRow(label, 0, 1, 1);
+      this.menuCpuFreqMin.text = MeterNoVal;
+      this.menuCpuFreqMin.add_style_class_name(
+        'tophat-menu-value tophat-menu-details'
+      );
+      this.addMenuRow(this.menuCpuFreqMin, 1, 1, 1);
+      label = new St.Label({
+        text: _('Session max:'),
+        style_class: 'tophat-menu-label tophat-menu-details',
+      });
+      this.addMenuRow(label, 0, 1, 1);
+      this.menuCpuFreqMax.text = MeterNoVal;
+      this.menuCpuFreqMax.add_style_class_name(
+        'tophat-menu-value tophat-menu-details'
+      );
+      this.addMenuRow(this.menuCpuFreqMax, 1, 1, 1);
+      label = new St.Label({
         text: _('Temperature:'),
-        style_class:
-          'tophat-menu-label tophat-menu-details tophat-menu-section-end',
+        style_class: 'tophat-menu-label tophat-menu-details',
       });
       this.addMenuRow(label, 0, 1, 1);
       this.menuCpuTemp.text = MeterNoVal;
       this.menuCpuTemp.add_style_class_name(
-        'tophat-menu-value tophat-menu-details tophat-menu-section-end'
+        'tophat-menu-value tophat-menu-details'
       );
       this.addMenuRow(this.menuCpuTemp, 1, 1, 1);
+      label = new St.Label({
+        text: _('Fan speed:'),
+        style_class:
+          'tophat-menu-label tophat-menu-details tophat-menu-section-end',
+      });
+      this.addMenuRow(label, 0, 1, 1);
+      this.menuCpuFan.text = MeterNoVal;
+      this.menuCpuFan.add_style_class_name(
+        'tophat-menu-value tophat-menu-details tophat-menu-section-end'
+      );
+      this.addMenuRow(this.menuCpuFan, 1, 1, 1);
 
       if (this.historyChart) {
         this.addMenuRow(this.historyChart, 0, 2, 1);
@@ -263,10 +299,28 @@ export const CpuMonitor = GObject.registerClass(
       });
       this.vitalsSignals.push(id);
 
+      id = vitals.connect('notify::cpu-freq-min', () => {
+        const s = vitals.cpu_freq_min.toFixed(1) + ' GHz';
+        this.menuCpuFreqMin.text = s;
+      });
+      this.vitalsSignals.push(id);
+
+      id = vitals.connect('notify::cpu-freq-max', () => {
+        const s = vitals.cpu_freq_max.toFixed(1) + ' GHz';
+        this.menuCpuFreqMax.text = s;
+      });
+      this.vitalsSignals.push(id);
+
       id = vitals.connect('notify::cpu-temp', () => {
         // console.log(`cpu-temp: ${vitals.cpu_temp}`);
         const s = vitals.cpu_temp.toFixed(0) + ' °C';
         this.menuCpuTemp.text = s;
+      });
+      this.vitalsSignals.push(id);
+
+      id = vitals.connect('notify::cpu-fan', () => {
+        const rpm = vitals.cpu_fan;
+        this.menuCpuFan.text = rpm > 0 ? `${rpm} RPM` : 'n/a';
       });
       this.vitalsSignals.push(id);
 
