@@ -50,8 +50,8 @@
 
 .tophat-panel-usage-stacked {
   font-size: 0.7em;
-  text-align: right;
-  min-width: 4em;
+  text-align: left;
+  min-width: 3em;
 }
 
 .tophat-panel-inactive {
